@@ -100,6 +100,36 @@ impl<M: TensorCollection<E, D>, D: Device<E>, E: Dtype> Optimizer<M, D, E> for A
     }
 }
 
+impl<M, D: Device<E>, E: Dtype> Adam<M, E, D> {
+    pub fn update_iter<'a, S, I>(
+        &mut self,
+        tensors_iter: I,
+        gradients: &Gradients<E, D>,
+    ) -> Result<(), OptimizerUpdateError<D::Err>>
+    where
+        S: Shape,
+        I: Iterator<Item = &'a mut Tensor<S, E, D>>,
+    {
+        self.t = self.t.checked_add(1).unwrap();
+
+        let from_device_err = |err: D::Err| -> OptimizerUpdateError<D::Err> {
+            OptimizerUpdateError::DeviceError(err)
+        };
+
+        for p in tensors_iter {
+            // dbg!(&p);
+            let g = gradients.get_ref(p);
+            let m_t = self.moment1.get_or_alloc_mut(p).map_err(from_device_err)?;
+            let v_t = self.moment2.get_or_alloc_mut(p).map_err(from_device_err)?;
+            self.cfg
+                .try_update(self.t, p, m_t, v_t, g)
+                .map_err(from_device_err)?;
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

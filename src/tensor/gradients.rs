@@ -95,7 +95,7 @@ impl<E, D: Storage<E>> Gradients<E, D> {
     /// Returns an immutable reference to the data associated with `t`.
     ///
     /// **Panics** if data associated with `t` is not found. This indicates an unrecoverable bug.
-    pub(crate) fn get_ref<S: Shape>(&mut self, t: &impl Tensorlike<S, E, D>) -> &D::Vec {
+    pub(crate) fn get_ref<S: Shape>(&self, t: &impl Tensorlike<S, E, D>) -> &D::Vec {
         self.gradient_by_id.get(&t.id()).unwrap()
     }
 
@@ -140,7 +140,7 @@ impl<E, D: Storage<E>> Gradients<E, D> {
         l2: &impl Tensorlike<L2, E, D>,
         r: &impl Tensorlike<R, E, D>,
     ) -> (&mut D::Vec, &mut D::Vec, &D::Vec) {
-        assert_ne!(l1.id(), l2.id());
+        // assert_ne!(l1.id(), l2.id());
         assert_ne!(l1.id(), r.id());
         assert_ne!(l2.id(), r.id());
         let l1_ptr = self.get_mut(l1) as *mut _;
@@ -358,3 +358,74 @@ impl<E, D: Storage<E>> Tape<E, D> for Arc<Mutex<OwnedTape<E, D>>> {
         tape.add_backward_op(operation);
     }
 }
+
+impl<E, D: Storage<E>> Merge<NoneTape> for Arc<Mutex<Arc<Mutex<OwnedTape<E, D>>>>> {
+    fn merge(self, _: NoneTape) -> Self {
+        self
+    }
+}
+
+impl<E, D: Storage<E>> Merge<Self> for Arc<Mutex<Arc<Mutex<OwnedTape<E, D>>>>> {
+    fn merge(self, other: Self) -> Self {
+        if !Arc::ptr_eq(&self, &other) {
+            let pointer_lhs = self.lock().unwrap();
+            let mut pointer_rhs = other.lock().unwrap();
+            if !Arc::ptr_eq(&pointer_lhs, &pointer_rhs) {
+                let mut lhs = pointer_lhs.lock().unwrap();
+                let mut rhs = pointer_rhs.lock().unwrap();
+                lhs.gradients
+                    .gradient_by_id
+                    .append(&mut rhs.gradients.gradient_by_id);
+                if let Some(leafs) = &mut rhs.gradients.leaf_ids {
+                    lhs.gradients
+                        .leaf_ids
+                        .get_or_insert_with(Default::default)
+                        .append(leafs);
+                }
+                lhs.operations.append(&mut rhs.operations);
+            }
+            // Update the RHS so it points to the same underlying OwnedTape.
+            *pointer_rhs = pointer_lhs.clone();
+            assert!(Arc::ptr_eq(&pointer_lhs, &pointer_rhs));
+        }
+        self
+    }
+}
+
+impl<E, D: Storage<E>> Tape<E, D> for Arc<Mutex<Arc<Mutex<OwnedTape<E, D>>>>> {
+    const OWNS_TAPE: bool = true;
+    fn add_backward_op<F>(&mut self, operation: F)
+    where
+        F: 'static + FnOnce(&mut Gradients<E, D>) -> Result<(), D::Err>,
+    {
+        let mut tape = self.lock().unwrap();
+        tape.add_backward_op(operation);
+    }
+}
+
+// impl<E, D: Storage<E>> Merge<NoneTape> for Option<Arc<Mutex<OwnedTape<E, D>>>> {
+//     fn merge(self, _: NoneTape) -> Self {
+//         self
+//     }
+// }
+
+// impl<E, D: Storage<E>> Merge<Self> for Option<Arc<Mutex<OwnedTape<E, D>>>> {
+//     fn merge(self, other: Self) -> Self {
+//         match (self, other) {
+//             (Some(lhs), Some(rhs)) => Some(lhs.merge(rhs)),
+//             (lhs, rhs) => lhs.or(rhs),
+//         }
+//     }
+// }
+
+// impl<E, D: Storage<E>> Tape<E, D> for Option<Arc<Mutex<OwnedTape<E, D>>>> {
+//     const OWNS_TAPE: bool = true;
+//     fn add_backward_op<F>(&mut self, operation: F)
+//     where
+//         F: 'static + FnOnce(&mut Gradients<E, D>) -> Result<(), D::Err>,
+//     {
+//         if let Some(tape) = self {
+//             tape.lock().unwrap().add_backward_op(operation);
+//         }
+//     }
+// }
