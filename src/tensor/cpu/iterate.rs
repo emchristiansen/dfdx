@@ -42,6 +42,8 @@ impl<S: Shape> NdIndex<S> {
     #[inline(always)]
     pub(crate) fn next(&mut self) -> Option<usize> {
         match self.contiguous {
+            // TODO: This is a hack.
+            Some(0) => None,
             Some(numel) => match self.next.as_mut() {
                 Some(i) => {
                     let idx = *i;
@@ -95,21 +97,25 @@ impl<S: Shape> NdIndex<S> {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct StridedRefIter<'a, S: Shape, E> {
     data: &'a Vec<E>,
     index: NdIndex<S>,
 }
 
+#[derive(Debug)]
 pub(crate) struct StridedMutIter<'a, S: Shape, E> {
     data: &'a mut Vec<E>,
     index: NdIndex<S>,
 }
 
+#[derive(Debug)]
 pub(crate) struct StridedRefIndexIter<'a, S: Shape, E> {
     data: &'a Vec<E>,
     index: NdIndex<S>,
 }
 
+#[derive(Debug)]
 pub(crate) struct StridedMutIndexIter<'a, S: Shape, E> {
     data: &'a mut Vec<E>,
     index: NdIndex<S>,

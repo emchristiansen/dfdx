@@ -19,10 +19,11 @@ impl<E: Dtype> super::UnstackKernel<E> for Cpu {
         }
 
         let num_items = inp.shape().concrete()[0];
-        let item_size = inp.data.len() / num_items;
 
         let mut tensors = Vec::with_capacity(num_items);
         for i in 0..num_items {
+            let item_size = inp.data.len() / num_items;
+
             let mut data = self.try_alloc_elem(item_size, E::default())?;
             data.copy_from_slice(&inp.data[i * item_size..(i + 1) * item_size]);
 
@@ -43,10 +44,10 @@ impl<E: Dtype> super::UnstackKernel<E> for Cpu {
         grad_inp: &mut Self::Vec,
         grad_out: Vec<&Self::Vec>,
     ) -> Result<(), Self::Err> {
-        let item_size = grad_inp.len() / grad_out.len();
-
+        let grad_out_len = grad_out.len();
         for (i, item) in grad_out.into_iter().enumerate() {
             for (j, value) in item.iter().enumerate() {
+                let item_size = grad_inp.len() / grad_out_len;
                 grad_inp[i * item_size + j] += *value;
             }
         }
